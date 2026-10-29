@@ -1,4 +1,5 @@
 'use strict';
+const NOTES_API=location.hostname==='nenmonchina.github.io'?'https://yunnan-november-journey-2026.corou-2728.chatgpt.site/api/notes':'/api/notes';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const saved={get(k,f=''){try{return localStorage.getItem(k)??f}catch{return f}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
@@ -52,11 +53,24 @@ function loadMap(){if(!ak){mapError('等待 AK 配置');return}if(loadingMap||ma
 async function focusDay(){const token=++mapView;map.clearOverlays();map.setTilt(50);map.centerAndZoom(days[selected].city,11);for(const q of days[selected].places.filter(p=>!p.includes('萧山'))){try{const p=await resolvePoint(q,days[selected].city);if(token!==mapView)return;map.addOverlay(new BMapGL.Marker(p));map.addOverlay(new BMapGL.Label(q,{position:p,offset:new BMapGL.Size(12,-20)}))}catch{}}}
 async function overview(){if(!map){toast('地图尚未连接');return}const token=++mapView;map.clearOverlays();let ps=[];for(const city of ['昆明市','大理市','丽江市','香格里拉市']){try{const p=await resolvePoint(city,city);if(token!==mapView)return;ps.push(p);map.addOverlay(new BMapGL.Marker(p));map.addOverlay(new BMapGL.Label(city,{position:p,offset:new BMapGL.Size(10,-20)}))}catch{}}if(ps.length>1){map.addOverlay(new BMapGL.Polyline([...ps,ps[0]],{strokeColor:'#285f4b',strokeWeight:3}));map.setViewport(ps)}$('mapStatus').textContent='全程顺序示意 · 查看单段可显示实际道路'}
 $('overviewBtn').onclick=overview;$('tiltBtn').onclick=()=>{if(map)map.setTilt(map.getTilt()>0?0:60)};
-function renderNotes(){const list=notesByDay[selected];$('notesList').innerHTML=list?list.length?list.map(n=>`<article class="shared-note"><div><b>${esc(n.author)}</b><time>${esc(new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'short'}).format(new Date(n.createdAt)))}</time></div><p>${esc(n.text)}</p></article>`).join(''):'<p class="muted">这一天还没有共享备注。</p>':'<p class="muted">正在读取共享备注…</p>'}
-async function loadNotes(){const day=selected,version=++notesRequest;try{const r=await fetch('/api/notes?day='+day,{cache:'no-store'});if(!r.ok)throw Error('无法连接共享备注服务');const data=await r.json();notesByDay[day]=data.notes;if(day===selected&&version===notesRequest){renderNotes();$('notesStatus').textContent='共享备注已同步'}}catch(e){if(day===selected&&version===notesRequest){$('notesStatus').textContent='共享备注服务暂不可用，请刷新重试。';if(!notesByDay[day])$('notesList').innerHTML=''}}}
+let confirmDeleteId=null,noteDeleting=false;
+function renderNotes(){const list=notesByDay[selected];$('notesList').innerHTML=list?list.length?list.map(n=>`<article class="shared-note"><div><b>${esc(n.author)}</b><time>${esc(new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'short'}).format(new Date(n.createdAt)))}</time></div><p>${esc(n.text)}</p><div class="note-actions">${confirmDeleteId===n.id?'<span>确认删除这条备注？</span><button type="button" class="note-delete" data-confirm-delete="'+esc(n.id)+'">确认删除</button><button type="button" class="text-btn" data-cancel-delete>取消</button>':'<button type="button" class="note-delete" data-delete-note="'+esc(n.id)+'" aria-label="删除 '+esc(n.author)+' 的备注">删除</button>'}</div></article>`).join(''):'<p class="muted">这一天还没有共享备注。</p>':'<p class="muted">正在读取共享备注…</p>'}
+async function loadNotes(){const day=selected,version=++notesRequest;try{const r=await fetch(NOTES_API+'?day='+day,{cache:'no-store'});if(!r.ok)throw Error('无法连接共享备注服务');const data=await r.json();notesByDay[day]=data.notes;if(day===selected&&version===notesRequest){renderNotes();$('notesStatus').textContent='共享备注已同步'}}catch(e){if(day===selected&&version===notesRequest){$('notesStatus').textContent='共享备注服务暂不可用，请刷新重试。';if(!notesByDay[day])$('notesList').innerHTML=''}}}
+
+$('notesList').addEventListener('click',async e=>{
+  const target=e.target.closest('button');if(!target||noteDeleting)return;
+  if(target.hasAttribute('data-cancel-delete')){confirmDeleteId=null;renderNotes();return}
+  if(target.dataset.deleteNote){confirmDeleteId=target.dataset.deleteNote;renderNotes();return}
+  const id=target.dataset.confirmDelete;if(!id)return;
+  const day=selected;noteDeleting=true;target.disabled=true;target.textContent='正在删除…';
+  try{const r=await fetch(NOTES_API+'?id='+encodeURIComponent(id)+'&day='+day,{method:'DELETE'});const body=await r.json();if(!r.ok&&r.status!==404)throw Error(body.error||'删除失败');confirmDeleteId=null;notesByDay[day]=(notesByDay[day]||[]).filter(n=>n.id!==id);if(selected===day){renderNotes();await loadNotes();$('notesStatus').textContent=r.status===404?'这条备注已被其他人删除。':'已删除，所有访问者都会同步更新。'}toast('备注已删除')}
+  catch(err){toast('未删除：'+err.message);renderNotes()}
+  finally{noteDeleting=false}
+});
+
 $('noteAuthor').value=saved.get('yn-note-author');$('noteAuthor').oninput=e=>saved.set('yn-note-author',e.target.value);$('personalNote').oninput=e=>draftByDay[selected]=e.target.value;$('refreshNotes').onclick=loadNotes;
-$('notesForm').onsubmit=async e=>{e.preventDefault();if(noteSubmitting)return;const author=$('noteAuthor').value.trim(),text=$('personalNote').value.trim(),day=selected;if(!author||!text){$('notesStatus').textContent='请填写署名和备注内容。';return}noteSubmitting=true;$('submitNote').disabled=true;$('notesStatus').textContent='正在发布…';try{const r=await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({author,text,day})});const body=await r.json();if(!r.ok)throw Error(body.error||'发布失败');draftByDay[day]='';saved.set('yn-note-author',author);if(day===selected){$('personalNote').value='';await loadNotes();$('notesStatus').textContent='已发布，其他访问者可查看。'}toast('备注已共享')}catch(err){$('notesStatus').textContent='未发布：'+err.message}finally{noteSubmitting=false;$('submitNote').disabled=false}};
-setInterval(()=>{if(!document.hidden&&!noteSubmitting)loadNotes()},15000);
+$('notesForm').onsubmit=async e=>{e.preventDefault();if(noteSubmitting)return;const author=$('noteAuthor').value.trim(),text=$('personalNote').value.trim(),day=selected;if(!author||!text){$('notesStatus').textContent='请填写署名和备注内容。';return}noteSubmitting=true;$('submitNote').disabled=true;$('notesStatus').textContent='正在发布…';try{const r=await fetch(NOTES_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({author,text,day})});const body=await r.json();if(!r.ok)throw Error(body.error||'发布失败');draftByDay[day]='';saved.set('yn-note-author',author);if(day===selected){$('personalNote').value='';await loadNotes();$('notesStatus').textContent='已发布，其他访问者可查看。'}toast('备注已共享')}catch(err){$('notesStatus').textContent='未发布：'+err.message}finally{noteSubmitting=false;$('submitNote').disabled=false}};
+setInterval(()=>{if(!document.hidden&&!noteSubmitting&&!noteDeleting&&!confirmDeleteId)loadNotes()},15000);
 
 const weatherLocations=[...days.map((d,i)=>({...d,key:'day'+i,date:`2026-11-${String(i+8).padStart(2,'0')}`})),{key:'snow',lat:27.11,lng:100.18,date:'2026-11-11'},{key:'valley',lat:27.12,lng:100.23,date:'2026-11-12'}];
 function weatherName(c){return c===0?'晴':c<=3?'多云':c<=48?'雾':c<=67?'有雨':c<=77?'降雪':c<=82?'阵雨':c<=86?'阵雪':'雷雨'}
@@ -74,4 +88,5 @@ const initialHash=location.hash; const hash=location.hash.match(/^#day-([1-7])$/
 
 
 if(initialHash==='#preparation'){history.replaceState(null,'',initialHash);document.getElementById('preparation').scrollIntoView();}
+
 

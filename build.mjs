@@ -6,4 +6,5 @@ if(manifest.static||manifest.d1!=='DB')throw Error('Worker manifest must declare
 await mkdir('dist/server',{recursive:true});await mkdir('dist/.openai',{recursive:true});
 await writeFile('dist/server/index.js','const ASSETS='+JSON.stringify(assets)+';\n'+await readFile('worker/index.mjs','utf8'));
 await writeFile('dist/.openai/hosting.json',JSON.stringify(manifest,null,2)+'\n');
+await mkdir('docs',{recursive:true});for(const [name,content]of Object.entries(assets))await writeFile('docs/'+name,content);await writeFile('docs/.nojekyll','');
 console.log('Built portable Worker with reviewed frontend and shared D1 notes');

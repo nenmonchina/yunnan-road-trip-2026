@@ -14,4 +14,15 @@ const responses=await Promise.all([send({day:4,author:'同行人 A',text:'云端
 let data=await(await worker.fetch(new Request(api+'?day=4'),{DB})).json();assert.equal(data.notes.length,2);assert.deepEqual(new Set(data.notes.map(n=>n.author)),new Set(['同行人 A','同行人 B']));assert.ok(data.notes.every(n=>n.id&&n.createdAt));
 assert.equal((await(await worker.fetch(new Request(api+'?day=3'),{DB})).json()).notes.length,0);
 assert.equal((await worker.fetch(new Request(api,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://foreign.test'},body:'{}'}),{DB})).status,403);
+const target=data.notes[0].id;
+const remove=(id,day,origin='https://example.test')=>worker.fetch(new Request(api+'?id='+id+'&day='+day,{method:'DELETE',headers:{Origin:origin}}),{DB});
+assert.equal((await remove(target,4,'https://foreign.test')).status,403);
+assert.equal((await remove(target,3)).status,404);
+assert.equal((await remove('invalid',4)).status,400);
+assert.equal((await remove(target,4)).status,200); // Anonymous visitor, no author or ownership required.
+data=await(await worker.fetch(new Request(api+'?day=4'),{DB})).json();assert.equal(data.notes.length,1);assert.ok(data.notes.every(n=>n.id!==target));
+assert.equal((await remove(target,4)).status,404);
+const preflight=await worker.fetch(new Request(api,{method:'OPTIONS',headers:{Origin:'https://nenmonchina.github.io','Access-Control-Request-Method':'DELETE'}}),{DB});assert.equal(preflight.status,204);assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'https://nenmonchina.github.io');
+const pagesNote=await worker.fetch(new Request(api,{method:'POST',headers:{Origin:'https://nenmonchina.github.io','Content-Type':'application/json'},body:JSON.stringify({day:2,author:'Pages 测试',text:'共享 API 测试'})}),{DB});assert.equal(pagesNote.status,201);const pagesId=(await pagesNote.json()).note.id;
+assert.equal((await remove(pagesId,2,'https://nenmonchina.github.io')).status,200);
 sqlite.close();console.log('PASS: production Worker assets, generated SQLite migration, shared notes, validation and origin checks');

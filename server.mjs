@@ -11,6 +11,12 @@ const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application
 const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');
 if(url.pathname==='/api/notes'){
 if(req.method==='GET'){const raw=url.searchParams.get('day'),day=Number(raw);if(raw===null||!Number.isInteger(day)||day<0||day>6)return json(res,400,{error:'日期无效'});return json(res,200,{notes:notes.filter(n=>n.day===day).slice(-500)})}
+if(req.method==='DELETE'){
+if(req.headers.origin){let host;try{host=new URL(req.headers.origin).host}catch{return json(res,403,{error:'来源无效'})}if(host!==req.headers.host)return json(res,403,{error:'来源不匹配'})}
+const id=url.searchParams.get('id'),raw=url.searchParams.get('day'),day=Number(raw);
+if(!id||!/^[a-f0-9-]{36}$/i.test(id)||raw===null||!Number.isInteger(day)||day<0||day>6)return json(res,400,{error:'备注标识或日期无效'});
+let removed=false;const write=writes.then(async()=>{const next=notes.filter(n=>!(n.id===id&&n.day===day));removed=next.length!==notes.length;if(removed){await writeFile(store+'.tmp',JSON.stringify(next,null,2),'utf8');await rename(store+'.tmp',store);notes=next}});writes=write.catch(()=>{});await write;
+return removed?json(res,200,{deleted:true,id}):json(res,404,{error:'该备注已被删除或不存在'})}
 if(req.method==='POST'){
 if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'只支持 JSON'});
 if(req.headers.origin){let host;try{host=new URL(req.headers.origin).host}catch{return json(res,403,{error:'来源无效'})}if(host!==req.headers.host)return json(res,403,{error:'来源不匹配'})}
