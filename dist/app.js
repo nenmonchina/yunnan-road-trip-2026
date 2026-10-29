@@ -1,5 +1,5 @@
 'use strict';
-const NOTES_API=location.hostname==='nenmonchina.github.io'?'https://yunnan-november-journey-2026.corou-2728.chatgpt.site/api/notes':'/api/notes';
+const NOTES_API=['localhost','127.0.0.1'].includes(location.hostname)?'/api/notes':'https://yunnan-notes-d9glvl31g451cf24c-1255463023.ap-shanghai.app.tcloudbase.com/api/notes';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const saved={get(k,f=''){try{return localStorage.getItem(k)??f}catch{return f}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};

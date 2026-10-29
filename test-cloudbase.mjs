@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const {createHandler}=createRequire(import.meta.url)('./cloudbase/notes/index.js');
+const rows=[];
+const db={collection(name){assert.equal(name,'travel_notes');let filter={};return {where(v){filter=v;return this},orderBy(){return this},limit(){return this},async get(){return {data:rows.filter(n=>Object.entries(filter).every(([k,v])=>n[k]===v)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}},async add(n){rows.push(n);return {id:n._id}},async remove(){let deleted=0;for(let i=rows.length-1;i>=0;i--)if(Object.entries(filter).every(([k,v])=>rows[i][k]===v)){rows.splice(i,1);deleted++}return {deleted}}}}};
+const run=createHandler(db),origin='https://nenmonchina.github.io';
+const call=(httpMethod,queryStringParameters={},body,headers={})=>run({httpMethod,queryStringParameters,body:body===undefined?undefined:JSON.stringify(body),headers:{origin,'content-type':'application/json',...headers}});
+assert.equal((await call('OPTIONS')).statusCode,204);
+assert.equal((await call('GET',{day:'4'},undefined,{origin:'https://foreign.test'})).statusCode,403);
+assert.equal((await call('POST',{}, {day:4,author:'',text:'x'})).statusCode,400);
+const response=await call('POST',{}, {day:4,author:'同行人 A',text:'国内备注接口测试'});assert.equal(response.statusCode,201);const note=JSON.parse(response.body).note;
+assert.equal(JSON.parse((await call('GET',{day:'4'})).body).notes[0].id,note.id);
+assert.equal((await call('DELETE',{id:note.id,day:'3'})).statusCode,404);
+assert.equal((await call('DELETE',{id:note.id,day:'4'})).statusCode,200);
+assert.equal(JSON.parse((await call('GET',{day:'4'})).body).notes.length,0);
+assert.equal((await call('DELETE',{id:note.id,day:'4'})).statusCode,404);
+console.log('PASS: CloudBase HTTP adapter, CORS, create/read/delete, validation and date isolation');

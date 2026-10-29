@@ -7,7 +7,7 @@
     "start": "node server.mjs",
     "build": "node build.mjs",
     "db:generate": "drizzle-kit generate",
-    "test": "node test-worker.mjs && node test-notes.mjs"
+    "test": "node test-worker.mjs && node test-notes.mjs && node test-cloudbase.mjs"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.0",

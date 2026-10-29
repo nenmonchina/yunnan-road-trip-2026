@@ -1,28 +1,20 @@
 import assert from 'node:assert/strict';
-import {readFile,readdir} from 'node:fs/promises';
-import {DatabaseSync} from 'node:sqlite';
+import {readFile} from 'node:fs/promises';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
-const sqlite=new DatabaseSync(':memory:');
-for(const file of (await readdir('drizzle')).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(await readFile('drizzle/'+file,'utf8'));
-const DB={prepare(sql){let args=[];return {bind(...values){args=values;return this},async all(){return {results:sqlite.prepare(sql).all(...args)}},async run(){return sqlite.prepare(sql).run(...args)}}}};
 const api='https://example.test/api/notes';
-const send=data=>worker.fetch(new Request(api,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://example.test'},body:JSON.stringify(data)}),{DB});
-let page=await worker.fetch(new Request('https://example.test/'),{DB});assert.equal(page.status,200);assert.match(await page.text(),/出行前准备/);
-assert.equal((await send({day:4,author:'',text:'x'})).status,400);
-const responses=await Promise.all([send({day:4,author:'同行人 A',text:'云端共享测试 A'}),send({day:4,author:'同行人 B',text:'云端共享测试 B'})]);assert.deepEqual(responses.map(r=>r.status),[201,201]);
-let data=await(await worker.fetch(new Request(api+'?day=4'),{DB})).json();assert.equal(data.notes.length,2);assert.deepEqual(new Set(data.notes.map(n=>n.author)),new Set(['同行人 A','同行人 B']));assert.ok(data.notes.every(n=>n.id&&n.createdAt));
-assert.equal((await(await worker.fetch(new Request(api+'?day=3'),{DB})).json()).notes.length,0);
-assert.equal((await worker.fetch(new Request(api,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://foreign.test'},body:'{}'}),{DB})).status,403);
-const target=data.notes[0].id;
-const remove=(id,day,origin='https://example.test')=>worker.fetch(new Request(api+'?id='+id+'&day='+day,{method:'DELETE',headers:{Origin:origin}}),{DB});
-assert.equal((await remove(target,4,'https://foreign.test')).status,403);
-assert.equal((await remove(target,3)).status,404);
-assert.equal((await remove('invalid',4)).status,400);
-assert.equal((await remove(target,4)).status,200); // Anonymous visitor, no author or ownership required.
-data=await(await worker.fetch(new Request(api+'?day=4'),{DB})).json();assert.equal(data.notes.length,1);assert.ok(data.notes.every(n=>n.id!==target));
-assert.equal((await remove(target,4)).status,404);
-const preflight=await worker.fetch(new Request(api,{method:'OPTIONS',headers:{Origin:'https://nenmonchina.github.io','Access-Control-Request-Method':'DELETE'}}),{DB});assert.equal(preflight.status,204);assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'https://nenmonchina.github.io');
-const pagesNote=await worker.fetch(new Request(api,{method:'POST',headers:{Origin:'https://nenmonchina.github.io','Content-Type':'application/json'},body:JSON.stringify({day:2,author:'Pages 测试',text:'共享 API 测试'})}),{DB});assert.equal(pagesNote.status,201);const pagesId=(await pagesNote.json()).note.id;
-assert.equal((await remove(pagesId,2,'https://nenmonchina.github.io')).status,200);
-sqlite.close();console.log('PASS: production Worker assets, generated SQLite migration, shared notes, validation and origin checks');
+const originalFetch=globalThis.fetch;
+const forwarded=[];
+globalThis.fetch=async(url,options)=>{forwarded.push({url,options});return new Response(JSON.stringify({ok:true}),{status:options.method==='POST'?201:200})};
+try{
+ const page=await worker.fetch(new Request('https://example.test/'));assert.equal(page.status,200);assert.match(await page.text(),/出行前准备/);
+ const preflight=await worker.fetch(new Request(api,{method:'OPTIONS',headers:{Origin:'https://nenmonchina.github.io'}}));assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),'https://nenmonchina.github.io');assert.equal(forwarded.length,0);
+ assert.equal((await worker.fetch(new Request(api,{headers:{Origin:'https://foreign.test'}}))).status,403);assert.equal(forwarded.length,0);
+ const body=JSON.stringify({day:4,author:'同行人',text:'备注'});
+ assert.equal((await worker.fetch(new Request(api,{method:'POST',headers:{Origin:'https://nenmonchina.github.io','Content-Type':'application/json',Cookie:'private=value',Authorization:'Bearer private'},body}))).status,201);
+ assert.equal(forwarded[0].options.body,body);assert.equal(forwarded[0].options.headers.get('authorization'),null);assert.equal(forwarded[0].options.headers.get('cookie'),null);
+ await worker.fetch(new Request(api+'?day=4&id=abc',{method:'DELETE'}));assert.match(forwarded[1].url,/tcloudbase\.com\/api\/notes\?day=4&id=abc$/);assert.equal(forwarded[1].options.method,'DELETE');
+ globalThis.fetch=async()=>new Response('{"error":"not found"}',{status:404});assert.equal((await worker.fetch(new Request(api+'?day=1'))).status,404);
+ globalThis.fetch=async()=>{throw Error('upstream unavailable')};assert.equal((await worker.fetch(new Request(api+'?day=1'))).status,503);
+ console.log('PASS: Worker assets, legacy notes proxy, CORS, credential isolation and upstream failures');
+}finally{globalThis.fetch=originalFetch}

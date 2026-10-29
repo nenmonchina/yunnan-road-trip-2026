@@ -4,7 +4,9 @@
 
 GitHub Pages：https://nenmonchina.github.io/yunnan-road-trip-2026/
 
-共享备注后端及镜像：https://yunnan-november-journey-2026.corou-2728.chatgpt.site
+网页镜像：https://yunnan-november-journey-2026.corou-2728.chatgpt.site
+
+共享备注后端：腾讯云 CloudBase 上海环境 `yunnan-notes-d9glvl31g451cf24c`，函数 `yunnan-notes-api`，集合 `travel_notes`。
 
 ## 功能
 
@@ -27,14 +29,16 @@ Node.js 24，无须安装运行依赖：
 
 ## 线上部署
 
-线上版本为 ESM Worker + D1 数据库，沿用与本地相同的已确认前端。dist 下三个前端源文件为 index.html、style.css、app.js。worker/index.mjs 实现共享备注 API，build.mjs 将前端嵌入 Worker 并生成 dist/server/index.js。数据库迁移由 Drizzle 从 db/schema.ts 生成。
+前端由 GitHub Pages 发布，直接请求腾讯云 HTTP 网关 `/api/notes`。dist 下三个前端源文件为 index.html、style.css、app.js。build.mjs 生成 docs 与镜像 Worker；旧 Worker 的备注 API 转发腾讯云，避免旧客户端写入另一套数据。
+
+CloudBase 普通云函数源码在 cloudbase/notes，Node.js 20.19、执行方法 index.main、部署时自动安装依赖。集合 travel_notes 设置 ADMINONLY，由服务端 SDK 访问；HTTP 路由关联该函数，平台跨域关闭，由函数仅向两个已发布网页来源返回 CORS。无需公开数据库权限或将云密钥放进网页。体验环境有效期至 2027-04-29 23:59:59；未开通收费升级。
 
     pnpm install --frozen-lockfile --ignore-scripts
     pnpm run db:generate
     pnpm run build
     pnpm test
 
-源码中的 .openai/hosting.json 绑定 Sites 项目与 D1 DB。发布包需要 dist/server/index.js、hosting manifest 和 drizzle 迁移。GitHub 用于存放源码；不要只把前端放到 GitHub Pages，否则共享备注 API 不存在。
+源码中的 .openai/hosting.json 保留 Sites 项目与旧 D1 绑定；旧库保留备份，线上备注改由腾讯云保存。发布包保留原有迁移文件。GitHub Pages 仅发布 docs，备注接口独立运行于腾讯云。
 
 ## 数据说明
 
@@ -44,5 +48,5 @@ Node.js 24，无须安装运行依赖：
 
 ## GitHub Pages
 
-Pages 发布源为 main 分支的 /docs 文件夹，构建时由已确认前端生成。Pages 上的共享备注请求会连接现有 Worker，支持署名填写和所有访问者删除；只允许该 GitHub 用户域名的跨域请求。参考站 yunnan-travel 保持原样。
+Pages 发布源为 main 分支的 /docs 文件夹，构建时由已确认前端生成。共享备注直接连接腾讯云，支持署名填写和所有访问者删除。参考站 yunnan-travel 保持原样。
 
