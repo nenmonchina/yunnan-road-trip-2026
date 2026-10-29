@@ -1,0 +1,9 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+const assets={};
+for(const name of ['index.html','style.css','app.js'])assets[name]=await readFile('dist/'+name,'utf8');
+const manifest=JSON.parse(await readFile('.openai/hosting.json','utf8'));
+if(manifest.static||manifest.d1!=='DB')throw Error('Worker manifest must declare DB and omit static');
+await mkdir('dist/server',{recursive:true});await mkdir('dist/.openai',{recursive:true});
+await writeFile('dist/server/index.js','const ASSETS='+JSON.stringify(assets)+';\n'+await readFile('worker/index.mjs','utf8'));
+await writeFile('dist/.openai/hosting.json',JSON.stringify(manifest,null,2)+'\n');
+console.log('Built portable Worker with reviewed frontend and shared D1 notes');

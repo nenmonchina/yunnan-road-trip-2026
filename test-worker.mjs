@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFile,readdir} from 'node:fs/promises';
+import {DatabaseSync} from 'node:sqlite';
+const source=await readFile('dist/server/index.js','utf8');
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
+const sqlite=new DatabaseSync(':memory:');
+for(const file of (await readdir('drizzle')).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(await readFile('drizzle/'+file,'utf8'));
+const DB={prepare(sql){let args=[];return {bind(...values){args=values;return this},async all(){return {results:sqlite.prepare(sql).all(...args)}},async run(){return sqlite.prepare(sql).run(...args)}}}};
+const api='https://example.test/api/notes';
+const send=data=>worker.fetch(new Request(api,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://example.test'},body:JSON.stringify(data)}),{DB});
+let page=await worker.fetch(new Request('https://example.test/'),{DB});assert.equal(page.status,200);assert.match(await page.text(),/出行前准备/);
+assert.equal((await send({day:4,author:'',text:'x'})).status,400);
+const responses=await Promise.all([send({day:4,author:'同行人 A',text:'云端共享测试 A'}),send({day:4,author:'同行人 B',text:'云端共享测试 B'})]);assert.deepEqual(responses.map(r=>r.status),[201,201]);
+let data=await(await worker.fetch(new Request(api+'?day=4'),{DB})).json();assert.equal(data.notes.length,2);assert.deepEqual(new Set(data.notes.map(n=>n.author)),new Set(['同行人 A','同行人 B']));assert.ok(data.notes.every(n=>n.id&&n.createdAt));
+assert.equal((await(await worker.fetch(new Request(api+'?day=3'),{DB})).json()).notes.length,0);
+assert.equal((await worker.fetch(new Request(api,{method:'POST',headers:{'Content-Type':'application/json','Origin':'https://foreign.test'},body:'{}'}),{DB})).status,403);
+sqlite.close();console.log('PASS: production Worker assets, generated SQLite migration, shared notes, validation and origin checks');
