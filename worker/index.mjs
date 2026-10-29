@@ -17,7 +17,8 @@ async function handleRequest(request){try{
       if(new TextEncoder().encode(body).byteLength>12000)return json(413,{error:'内容太长'});
     }
     // Keep old clients on the same data store as new Pages clients.
-    const upstream=await fetch(NOTES_API+url.search,{method:request.method,headers,body,redirect:'error',signal:AbortSignal.timeout(15000)});
+    const upstream=await fetch(NOTES_API+url.search,{method:request.method,headers,body,redirect:'manual',signal:AbortSignal.timeout(15000)});
+    if(upstream.status>=300&&upstream.status<400)return json(502,{error:'备注接口返回了意外跳转，请稍后重试'});
     return new Response(upstream.body,{status:upstream.status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   }
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
